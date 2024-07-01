@@ -8,7 +8,7 @@ from enum import Enum
 class Grid:
     def __init__(self, w: int, h: int):
         assert (w > 0 and h > 0), "incorrect grid dimensions (width and height)"
-        self.dims = self.w, self.h = w, h
+        self.dims = self.h, self.w = h, w  # rows x cols as numpy shape
         self.coordinates = self.generate_coords(w, h)  # immutable tuples
         self.int_coordinates = tuple(coord[1] * w + coord[0] for coord in self.coordinates)
         # mutable set of coords as integers (indices)
@@ -22,15 +22,26 @@ class Grid:
         return tuple(coords)  # "human-readable" sorted tuple (memoization requires this obj to be hashable)
 
     @cache
-    def translate_coords(self, coord: tuple | int_like) -> int_like | tuple:
+    def translate_coords(self, coord: tuple | int_like = None, rowcol: tuple | None = None) -> int_like | tuple:
+        if rowcol is not None:
+            return self.translate_coords(coord=rowcol[::-1])  # numpy uses (y, x) for indexing; e.g. (0, 1) to 1
         if isinstance(coord, int_like):
             return divmod(coord, self.w)[::-1]  # int to (x, y); e.g. 0 to (0, 0)
         else:
             return coord[1] * self.w + coord[0]  # (x,y) to int; e.g. (1, 0) to 1
 
+    def get_neighbors(self, coord: tuple[int, int]) -> set[tuple[int, int]]:
+        moves = [-1, 1, 0]
+        neighbors00 = set(product(moves, repeat=2)) - {(0, 0)}
+        neighbors_of_coord = {(x + coord[0], y + coord[1]) for (x, y) in neighbors00}
+        valid_neighbors_of_coord = {(x, y) for (x, y) in neighbors_of_coord if (0 <= x < self.w and 0 <= y < self.h)}
+        return valid_neighbors_of_coord
+
 
 class MineField(Grid):
     # Game Engine; unlike Excel, here coords start from 0, 0
+    emoticons = Enum('Emoticon', zip(['GAME', 'WAITS', 'WON', 'LOST'], [":)", ":o", "8)", ";("]))
+
     def __init__(self, w: int, h: int, mines: int | None = None):
         assert (w > 1 or h > 1), "Incorrect minefield dimensions (width and height)"
         if mines is not None:
@@ -41,8 +52,7 @@ class MineField(Grid):
         self.n_mines = mines
         self.flags_left = 0
         self.game_over = False
-        self.emoticons = Enum('Emoticon', zip(['GAME', 'WAITS', 'WON', 'LOST'], [":)", ":o", "8)", ";("]))
-        self.reaction = self.emoticons.GAME
+        self.reaction = MineField.emoticons.GAME
 
     def complete_field_init(self, mines: int | None = None) -> np.ndarray:
         assert (self.n_mines is None) ^ (mines is None), ("Already complete! " if self.n_mines else "") + \
@@ -64,7 +74,7 @@ class MineField(Grid):
             self.underneath[list(surrounding_idxs)] += 1  # increment nearbies (up to 9, i.e. except for nearby mines)
 
         self.victorious = np.where(self.underneath == 9, 'f', self.underneath.astype(str))  # all mines flagged
-        view_array = self.visible.view()
+        view_array = self.visible.view().reshape(self.dims)
         view_array.flags.writeable = False
         return view_array
 
@@ -72,17 +82,10 @@ class MineField(Grid):
         rng = np.random.default_rng()
         return rng.choice(self.int_coordinates, size=n_mines, replace=False)  # choose cells to plant
 
-    def get_neighbors(self, coord: tuple) -> set:
-        moves = [-1, 1, 0]
-        neighbors00 = set(product(moves, repeat=2)) - {(0, 0)}
-        neighbors_of_coord = {(x + coord[0], y + coord[1]) for (x, y) in neighbors00}
-        valid_neighbors_of_coord = {(x, y) for (x, y) in neighbors_of_coord if (0 <= x < self.w and 0 <= y < self.h)}
-        return valid_neighbors_of_coord
-
     def is_victory(self) -> bool:
         if np.all(self.victorious == self.visible):
             # print("Win!")
-            self.reaction = self.emoticons.WON
+            self.reaction = MineField.emoticons.WON
             self.game_over = True
             return True
         return False
@@ -117,7 +120,7 @@ class MineField(Grid):
                 match self.underneath[cell_idx]:
                     case 9:  # end game, show mines (stop time?, change cell color to red?)
                         self.game_over = True
-                        self.reaction = self.emoticons.LOST
+                        self.reaction = MineField.emoticons.LOST
                         self.visible[cell_idx] = 'X'  # to-do: format red bg, exploded mine
                         revealed = [cell_idx]
                         for cell_i in np.where(self.underneath == 9)[0]:  # reveal remaining mined cells

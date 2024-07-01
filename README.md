@@ -4,6 +4,9 @@ Developed a Minesweeper game using Python, leveraging the .NET Common Language R
 
 No VBA or PyXl is used, only Python and .NET (Microsoft.Office.Interop.Excel) DLL. 
 Uses MVC (Model-View-Controller) design pattern to allow multiple instances of Minesweeper engine (e.g. versions) or UIs like Excel, CLI, web, etc.
+
+A simple robot (simulated strategy) was added and successfully tested once, see `launcher.py`.
+
 To-do: use PyInstaller to create executable, which depends on user's Excel installation (DLL path).
 
 Tested using Python 3.10.14 and pythonnet-3.0.1 from Anaconda.

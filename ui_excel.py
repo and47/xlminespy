@@ -16,10 +16,10 @@ class ExcelViewController:  # inherit from generic Minefield ViewController?
         workbook = self.excel.Workbooks.Add()
         self.ws = Excel.Worksheet(workbook.Worksheets[1])
 
-        self.start_rowcol, self.end_rowcol = self.arr_rowcol_range_from_dims(w=cols, h=rows)
+        self.start_rowcol, self.end_rowcol = self.get_grid_rowcol_range_from_specs(w=cols, h=rows)
         self.y0, self.x0 = self.start_rowcol
 
-        self.content_view = content_view.reshape((rows, cols))
+        self.content_view = content_view
 
         self.format_score_time(clock_loc, flagc_loc)
         self.flag_counter, self.clock, self.smile = 0, 0, ''
@@ -58,7 +58,7 @@ class ExcelViewController:  # inherit from generic Minefield ViewController?
             return self.ws.get_Range(top_left, bottom_right)  # rectangular multi-cell Range
 
     @staticmethod
-    def arr_rowcol_range_from_dims(w: int, h: int, vpanel: int = 1, hpanel: int = 1) -> tuple:
+    def get_grid_rowcol_range_from_specs(w: int, h: int, vpanel: int = 1, hpanel: int = 1) -> tuple:
         return (hpanel, vpanel), (hpanel + h - 1, vpanel + w - 1)
 
     def set_xl_value(self, cell_range: "Range", value: int | str) -> None:
@@ -77,15 +77,7 @@ class ExcelViewController:  # inherit from generic Minefield ViewController?
                 time.sleep(1)  # wait more before retrying, user could be e.g. editing cell
         raise RuntimeError("Couldn't set Excel cell value")
 
-    def set_grid(self, values) -> None:
-        while not self.excel.Ready:
-            time.sleep(0.1)
-        self.grid_range.Value2 = values
-
-    def read_grid(self) -> "Value2":
-        return self.grid_range.Value2
-
-    def format_grid(self) -> None:  # to-do: center value inside each cell
+    def format_grid(self) -> "Value2":  # to-do: center value inside each cell
         self.start_cell = self.get_xl_cell(*self.start_rowcol)  # ws.get_Cells or ws.Cells error
         self.end_cell = self.get_xl_cell(*self.end_rowcol)
 
@@ -102,14 +94,22 @@ class ExcelViewController:  # inherit from generic Minefield ViewController?
         self.excel.Visible = True
         grid.HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter
         grid.VerticalAlignment = Excel.XlVAlign.xlVAlignCenter
+        return self.read_grid()
 
-    def reveal(self, cells_coords: list[tuple]) -> None:
-        num_cells = len(cells_coords)
-        if num_cells:
-            if num_cells == 1:  # refresh a single cell
-                x, y = cells_coords[0]
-                range1x1 = self.get_xl_range(coord=(x, y)).Cells[self.y0, self.x0]  # adjust for grid loc.
-                self.set_xl_value(range1x1, str(self.content_view[y, x]))
-            else:  # or many (one cell at a time, as it may not be rectangular form)
-                for i, _ in enumerate(cells_coords):
-                    self.reveal([cells_coords[i]])
+    def set_grid(self, values: "Value2") -> None:
+        while not self.excel.Ready:
+            time.sleep(0.1)
+        self.grid_range.Value2 = values
+
+    def read_grid(self) -> "Value2":
+        return self.grid_range.Value2
+
+    def reveal_all_content_on_grid(self, cells_coords: list[tuple]) -> "Value2":
+        """Set each affected cell value in Spreadsheet one at a time and return the whole grid"""
+        for xy in cells_coords:
+            self._reveal_content_in_cell(*xy)
+        return self.read_grid()
+
+    def _reveal_content_in_cell(self, x, y) -> None:
+        range1x1 = self.get_xl_range(coord=(x, y)).Cells[self.y0, self.x0]  # adjust for grid loc.
+        self.set_xl_value(range1x1, str(self.content_view[y, x]))
