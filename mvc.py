@@ -1,21 +1,20 @@
 import time
 from engine import MineField, Grid
-from ui_excel import ExcelViewController
 from typing import Callable
 
 
-class MVC_Mines_Excel_Controller:
+class MVC_Mines_Controller:
 
-    def __init__(self, cols: int, rows: int, mines: int):
-        self.model = MineField(w=cols, h=rows)
+    def __init__(self, cols: int, rows: int, mines: int, engine: 'MineSweeperModel', ui: 'MineSweeperView'):
+        self.model = engine(w=cols, h=rows)
         self.players_view = self.model.complete_field_init(int(mines))
-        self.view = ExcelViewController(cols, rows, content_view=self.players_view)
+        self.view = ui(cols, rows, content_view=self.players_view)
         self.flags_left = self.view.flag_counter = self.model.flags_left
-        self.Excel_grid_state = self.view.format_grid()
+        self.displayed_grid = self.view.format_grid()
         # print(model.underneath.reshape((rows, cols)))  # debug
 
     @classmethod
-    def from_CLI_settings(cls) -> 'MVC_Mines_Excel_Controller':
+    def from_CLI_settings(cls, ui: 'MineSweeperView', engine: 'MineSweeperModel' = MineField) -> 'MVC_Mines_Controller':
         print("Excel controls. After setting difficulty here:")
         print("1) Select a cell on the grid using the arrow keys.")
         print("2) Enter a symbol: j to click/open selected cell, f to (f)lag mine, or ? to mark for yourself.\n\n")
@@ -37,11 +36,11 @@ class MVC_Mines_Excel_Controller:
         while not mines:
             mines = input("Enter the number of mines: ")  # to-do move game creation into Excel (take all from cells)
 
-        return cls(cols=cols, rows=rows, mines=mines)
+        return cls(cols=cols, rows=rows, mines=mines, engine=engine, ui=ui)
 
     def start_game(self, bot_strategy: Callable | None = None):
-        model, view = self.model, self.view
-        get_move = self.get_user_move if bot_strategy is None else self.feed(bot_strategy)
+        model, view = self.model, self.view  # shorten names
+        get_move = self.get_user_move if bot_strategy is None else self._feed(bot_strategy)
         starting_time = time.time()
 
         while not model.game_over:  # make a generator loop?
@@ -51,14 +50,14 @@ class MVC_Mines_Excel_Controller:
                 affected_cells = model.cell_action(cell_idx=changed_cell_idx, user_input=changed_cell_val)
                 if affected_cells:  # universal engine, in other games may be used, in minesweeper always True
                     view.flag_counter, view.smile = model.flags_left, model.reaction.value
-                    self.Excel_grid_state = view.reveal_all_content_on_grid(affected_cells)  # record updated grid state
-            time.sleep(1)  # poll user or bot "move" every second
+                    self.displayed_grid = view.refresh_grid(affected_cells)  # record updated grid state
             view.clock = time.time() - starting_time  # display time passed for the player
         return
 
     def get_user_move(self) -> tuple[int, str] | None:
         """Checks for and returns a valid user input (i.e. change in a cell on the grid/minefield range)"""
-        chgs, prior_values = 0, self.Excel_grid_state  # contains state (cell values/contents) prior to user input
+        time.sleep(1)  # poll user (not bot) "move" every second
+        chgs, prior_values = 0, self.displayed_grid  # contains state (cell values/contents) prior to user input
         new_values = self.view.read_grid()
         for i, (old_val, new_val) in enumerate(zip(prior_values, new_values)):
             if old_val != new_val:
@@ -72,10 +71,10 @@ class MVC_Mines_Excel_Controller:
 
     def _invalid_move_rollback(self, grid_prev_state: "Value2") -> None:
         print("User tried to change multiple cells")
-        self.view.smile = self.model.emoticons.WAITS.value  # could've been in parent (to-do) class of ExcelViewController
+        self.view.smile = self.model.emoticons.WAITS.value  # place in parent class of ExcelViewController (to-do)?
         self.view.set_grid(grid_prev_state)  # reset cell values to before last user's move
 
-    def feed(self, bot_strategy: Callable) -> Callable:
+    def _feed(self, bot_strategy: Callable) -> Callable:
         """ Supplement bot with what user sees (programmatically). Alternatively, use functools.partial.
          Minesweeper is Markovian (probabilities can be computed from current state and do not depend on priors),
          therefore no need to maintain state and use coroutine; thus, a simple call of external function."""
